@@ -1,18 +1,23 @@
 import { NgModule } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
 
-import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
+
+import { CustomSocketComponent } from './customization/custom-socket/custom-socket.component';
+import { CustomNodeComponent } from './customization/custom-node/custom-node.component';
+import { CustomConnectionComponent } from './customization/custom-connection/custom-connection.component';
+
+import { ReteModule } from 'rete-angular-plugin/18';
 
 @NgModule({
   declarations: [
-    AppComponent
+    AppComponent,
+    CustomSocketComponent,
+    CustomNodeComponent,
+    CustomConnectionComponent,
   ],
-  imports: [
-    BrowserModule,
-    AppRoutingModule
-  ],
+  imports: [BrowserModule, ReteModule],
   providers: [],
-  bootstrap: [AppComponent]
+  bootstrap: [AppComponent],
 })
-export class AppModule { }
+export class AppModule {}
