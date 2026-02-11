@@ -24,6 +24,26 @@ import {
   Presets as ContextMenuPresets,
 } from 'rete-context-menu-plugin';
 
+type WorkflowJSON = {
+  nodes: {
+    id: string;
+    type: string;
+    position: { x: number; y: number };
+    controls: Record<string, any>;
+  }[];
+  connections: {
+    source: string;
+    sourceOutput: string;
+    target: string;
+    targetInput: string;
+  }[];
+  viewport: {
+    x: number;
+    y: number;
+    k: number; // zoom
+  };
+};
+
 type Node =
   | StartNode
   | NumberNode
@@ -31,6 +51,12 @@ type Node =
   | ConditionNode
   | LogNode
   | MergeNode
+  | EndNode
+  | TriggerNode
+  | SendEmailNode
+  | DelayNode
+  | CheckOpenedNode
+  | TagUserNode
   | EndNode;
 // type Conn =
 //   | Connection<NumberNode, AddNode>
@@ -39,7 +65,6 @@ type Node =
 type Conn =
   | Connection<StartNode, NumberNode>
   | Connection<StartNode, AddNode>
-  | Connection<StartNode, ConditionNode>
   | Connection<NumberNode, AddNode>
   | Connection<NumberNode, ConditionNode>
   | Connection<AddNode, AddNode>
@@ -68,6 +93,119 @@ class Connection<A extends Node, B extends Node> extends Classic.Connection<
   A,
   B
 > {}
+
+class TagUserNode extends Classic.Node implements DataflowNode {
+  width = 220;
+  height = 140;
+  constructor() {
+    super('Tag User');
+
+    this.addInput('flow', new Classic.Input(flowSocket, 'Flow'));
+    this.addOutput('flow', new Classic.Output(flowSocket, 'Flow'));
+
+    this.addControl(
+      'tag',
+      new Classic.InputControl('text', { initial: 'Interested' }),
+    );
+  }
+
+  data() {
+    const tag = (this.controls['tag'] as any).value;
+
+    console.log(`🏷 Tagging user as: ${tag}`);
+
+    return { flow: true };
+  }
+}
+
+class CheckOpenedNode extends Classic.Node implements DataflowNode {
+  width = 220;
+  height = 140;
+  constructor() {
+    super('Check Email Opened');
+
+    this.addInput('flow', new Classic.Input(flowSocket, 'Flow'));
+
+    this.addOutput('opened', new Classic.Output(flowSocket, 'Opened'));
+    this.addOutput('notOpened', new Classic.Output(flowSocket, 'Not Opened'));
+  }
+
+  data() {
+    const opened = Math.random() > 0.5;
+
+    console.log(`📊 Email Opened? ${opened ? 'YES' : 'NO'}`);
+
+    return {
+      opened: opened ? true : undefined,
+      notOpened: !opened ? true : undefined,
+    };
+  }
+}
+
+class DelayNode extends Classic.Node implements DataflowNode {
+  width = 220;
+  height = 140;
+  constructor() {
+    super('Delay');
+
+    this.addInput('flow', new Classic.Input(flowSocket, 'Flow'));
+    this.addOutput('flow', new Classic.Output(flowSocket, 'Flow'));
+
+    this.addControl('days', new Classic.InputControl('number', { initial: 2 }));
+  }
+
+  async data() {
+    const days = (this.controls['days'] as any).value ?? 1;
+
+    console.log(`⏳ Waiting ${days} days (simulated)`);
+
+    return { flow: true };
+  }
+}
+
+class SendEmailNode extends Classic.Node implements DataflowNode {
+  width = 220;
+  height = 140;
+  constructor() {
+    super('Send Email');
+
+    this.addInput('flow', new Classic.Input(flowSocket, 'Flow'));
+    this.addOutput('flow', new Classic.Output(flowSocket, 'Flow'));
+
+    this.addControl(
+      'subject',
+      new Classic.InputControl('text', { initial: 'Welcome Email' }),
+    );
+  }
+
+  data() {
+    const subject = (this.controls['subject'] as any).value ?? 'Email';
+
+    console.log(`📧 Sending Email: ${subject}`);
+
+    return { flow: true };
+  }
+}
+
+class TriggerNode extends Classic.Node implements DataflowNode {
+  width = 160;
+  height = 120;
+  constructor() {
+    super('Trigger');
+
+    this.addOutput('flow', new Classic.Output(flowSocket, 'Flow'));
+
+    this.addControl(
+      'event',
+      new Classic.InputControl('text', { initial: 'User Signup' }),
+    );
+  }
+
+  data() {
+    console.log('🚀 Trigger fired');
+    return { flow: true };
+  }
+}
 
 class MergeNode extends Classic.Node implements DataflowNode {
   width = 160;
@@ -228,14 +366,14 @@ class ConditionNode extends Classic.Node implements DataflowNode {
     const threshold = thresholdControl?.value ?? 0;
 
     const result = value > threshold;
-    // console.log(
-    //   `Condition (${this.id}):`,
-    //   value,
-    //   '>',
-    //   threshold,
-    //   '=',
-    //   result ? 'TRUE' : 'FALSE',
-    // );
+    console.log(
+      `Condition (${this.id}):`,
+      value,
+      '>',
+      threshold,
+      '=',
+      result ? 'TRUE' : 'FALSE',
+    );
     // return {
     //   true: result ? value : undefined,
     //   false: !result ? value : undefined,
@@ -287,6 +425,34 @@ type AreaExtra = Area2D<Schemes> | AngularArea2D<Schemes> | ContextMenuExtra;
 const socket = new Classic.Socket('socket');
 
 export async function createEditor(container: HTMLElement, injector: Injector) {
+  function createNodeByType(type: string): Node {
+    switch (type) {
+      case 'Start':
+        return new StartNode();
+
+      case 'Number':
+        return new NumberNode(0, process);
+
+      case 'Add':
+        return new AddNode();
+
+      case 'Condition':
+        return new ConditionNode();
+
+      case 'Log':
+        return new LogNode('Log');
+
+      case 'Merge':
+        return new MergeNode();
+
+      case 'End':
+      case 'Failure':
+        return new EndNode(type);
+
+      default:
+        throw new Error(`Unknown node type: ${type}`);
+    }
+  }
   const editor = new NodeEditor<Schemes>();
   const area = new AreaPlugin<Schemes, AreaExtra>(container);
   const connection = new ConnectionPlugin<Schemes, AreaExtra>();
@@ -353,11 +519,112 @@ export async function createEditor(container: HTMLElement, injector: Injector) {
 
   AreaExtensions.selectableNodes(area, selector, { accumulating });
 
+  function saveWorkflow(): WorkflowJSON {
+    const nodes = editor.getNodes().map((node) => {
+      const view = area.nodeViews.get(node.id);
+
+      return {
+        id: node.id,
+        type: node.label,
+        position: view
+          ? { x: view.position.x, y: view.position.y }
+          : { x: 0, y: 0 },
+        controls: Object.fromEntries(
+          Object.entries(node.controls).map(([key, control]) => [
+            key,
+            (control as any).value,
+          ]),
+        ),
+      };
+    });
+
+    const connections = editor.getConnections().map((conn) => ({
+      source: conn.source,
+      sourceOutput: conn.sourceOutput,
+      target: conn.target,
+      targetInput: conn.targetInput,
+    }));
+
+    const transform = area.area?.transform ?? { x: 0, y: 0, k: 1 };
+
+    return {
+      nodes,
+      connections,
+      viewport: {
+        x: transform.x,
+        y: transform.y,
+        k: transform.k,
+      },
+    };
+  }
+
+  function persistWorkflow() {
+    const json = saveWorkflow();
+    localStorage.setItem('workflow', JSON.stringify(json));
+  }
+
+  console.log(JSON.stringify(saveWorkflow(), null, 2));
+
+  // setTimeout(async () => {
+  //   const json = saveWorkflow();
+  //   //await clearEditor();
+  //   await loadWorkflow(json);
+  // }, 1000);
+
+  async function loadWorkflow(data: WorkflowJSON) {
+    await clearEditor();
+
+    const nodeMap = new Map<string, Node>();
+
+    // Re-create nodes
+    for (const saved of data.nodes) {
+      const node = createNodeByType(saved.type);
+
+      // preserve ID
+      node.id = saved.id;
+
+      // restore controls
+      for (const [key, value] of Object.entries(saved.controls)) {
+        const control = node.controls[key] as any;
+        if (control?.setValue) {
+          control.setValue(value);
+        }
+      }
+
+      await editor.addNode(node);
+
+      // restore position
+      await area.translate(node.id, saved.position);
+
+      nodeMap.set(node.id, node);
+    }
+
+    //  Recreate connections
+    for (const conn of data.connections) {
+      await editor.addConnection(
+        new Connection(
+          nodeMap.get(conn.source)!,
+          conn.sourceOutput,
+          nodeMap.get(conn.target)!,
+          conn.targetInput,
+        ),
+      );
+    }
+
+    // Restore viewport pan and zoom
+    if (data.viewport) {
+      await area.area?.translate(data.viewport.x, data.viewport.y);
+
+      await area.area?.zoom(data.viewport.k, 0, 0);
+    }
+
+    await process();
+  }
+
   async function process() {
     dataflow.reset();
 
-    console.log('▶ Workflow execution started');
-
+    console.log(' Workflow execution started');
 
     const endNodes = editor.getNodes().filter((n) => n instanceof EndNode);
 
@@ -365,20 +632,52 @@ export async function createEditor(container: HTMLElement, injector: Injector) {
       await dataflow.fetch(end.id);
     }
 
-    console.log('✔ Workflow execution finished');
+    console.log(' Workflow execution finished');
+  }
+
+  //Clear the editor
+  async function clearEditor() {
+    for (const conn of editor.getConnections()) {
+      await editor.removeConnection(conn.id);
+    }
+
+    for (const node of editor.getNodes()) {
+      await editor.removeNode(node.id);
+    }
   }
 
   editor.addPipe((context) => {
     if (
+      context.type === 'nodecreated' ||
+      context.type === 'noderemoved' ||
       context.type === 'connectioncreated' ||
       context.type === 'connectionremoved'
     ) {
-      process();
+      persistWorkflow();
     }
     return context;
   });
 
-  process();
+  area.addPipe((context) => {
+    if (
+      context.type === 'zoomed' ||
+      context.type === 'translated' ||
+      context.type === 'nodetranslated'
+    ) {
+      persistWorkflow();
+    }
+    return context;
+  });
+
+  // process();
+  const saved = localStorage.getItem('workflow');
+
+  if (saved) {
+    const json = JSON.parse(saved);
+    loadWorkflow(json);
+  } else {
+    process(); // run default graph if no saved workflow
+  }
 
   return {
     destroy: () => area.destroy(),
