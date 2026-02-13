@@ -57,6 +57,7 @@ type Node =
   | DelayNode
   | CheckOpenedNode
   | TagUserNode
+  | SendReminderNode
   | EndNode;
 // type Conn =
 //   | Connection<NumberNode, AddNode>
@@ -82,7 +83,15 @@ type Conn =
   | Connection<MergeNode, EndNode>
   | Connection<StartNode, ConditionNode>
   | Connection<NumberNode, AddNode>
-  | Connection<AddNode, ConditionNode>;
+  | Connection<AddNode, ConditionNode>
+  | Connection<TriggerNode, SendEmailNode>
+  | Connection<SendEmailNode, DelayNode>
+  | Connection<DelayNode, SendEmailNode>
+  | Connection<CheckOpenedNode, SendEmailNode>
+  | Connection<TagUserNode, SendEmailNode>
+  | Connection<MergeNode, SendEmailNode>
+  | Connection<CheckOpenedNode, SendReminderNode>
+  | Connection<SendReminderNode, MergeNode>;
 
 type Schemes = GetSchemes<Node, Conn>;
 
@@ -94,9 +103,42 @@ class Connection<A extends Node, B extends Node> extends Classic.Connection<
   B
 > {}
 
+class SendReminderNode extends Classic.Node implements DataflowNode {
+  width = 160;
+  height = 70;
+
+  constructor() {
+    super('Send Reminder');
+
+    // FLOW input
+    this.addInput('flow', new Classic.Input(flowSocket, 'Flow'));
+
+    // FLOW output
+    this.addOutput('flow', new Classic.Output(flowSocket, 'Flow'));
+
+    // Subject control
+    this.addControl(
+      'subject',
+      new Classic.InputControl('text', { initial: 'Reminder Email' }),
+    );
+  }
+
+  data() {
+    const subject = (this.controls['subject'] as Classic.InputControl<'text'>)
+      ?.value;
+
+    console.log(`📨 Sending Reminder: ${subject}`);
+
+    return {
+      flow: true,
+    };
+  }
+}
+
 class TagUserNode extends Classic.Node implements DataflowNode {
-  width = 220;
-  height = 140;
+  width = 160;
+  height = 70;
+
   constructor() {
     super('Tag User');
 
@@ -119,8 +161,9 @@ class TagUserNode extends Classic.Node implements DataflowNode {
 }
 
 class CheckOpenedNode extends Classic.Node implements DataflowNode {
-  width = 220;
-  height = 140;
+  width = 160;
+  height = 70;
+
   constructor() {
     super('Check Email Opened');
 
@@ -143,8 +186,9 @@ class CheckOpenedNode extends Classic.Node implements DataflowNode {
 }
 
 class DelayNode extends Classic.Node implements DataflowNode {
-  width = 220;
-  height = 140;
+  width = 160;
+  height = 70;
+
   constructor() {
     super('Delay');
 
@@ -164,8 +208,9 @@ class DelayNode extends Classic.Node implements DataflowNode {
 }
 
 class SendEmailNode extends Classic.Node implements DataflowNode {
-  width = 220;
-  height = 140;
+  width = 160;
+  height = 70;
+
   constructor() {
     super('Send Email');
 
@@ -189,7 +234,7 @@ class SendEmailNode extends Classic.Node implements DataflowNode {
 
 class TriggerNode extends Classic.Node implements DataflowNode {
   width = 160;
-  height = 120;
+  height = 70;
   constructor() {
     super('Trigger');
 
@@ -209,7 +254,7 @@ class TriggerNode extends Classic.Node implements DataflowNode {
 
 class MergeNode extends Classic.Node implements DataflowNode {
   width = 160;
-  height = 120;
+  height = 70;
 
   constructor() {
     super('Merge');
@@ -232,7 +277,7 @@ class MergeNode extends Classic.Node implements DataflowNode {
 
 class EndNode extends Classic.Node implements DataflowNode {
   width = 160;
-  height = 80;
+  height = 70;
 
   constructor(label = 'End') {
     super(label);
@@ -249,7 +294,7 @@ class EndNode extends Classic.Node implements DataflowNode {
 
 class StartNode extends Classic.Node implements DataflowNode {
   width = 160;
-  height = 80;
+  height = 70;
 
   constructor() {
     super('Start');
@@ -267,8 +312,8 @@ class StartNode extends Classic.Node implements DataflowNode {
 }
 
 class NumberNode extends Classic.Node implements DataflowNode {
-  width = 180;
-  height = 120;
+  width = 160;
+  height = 70;
 
   constructor(initial: number, change?: (value: number) => void) {
     super('Number');
@@ -298,8 +343,8 @@ class NumberNode extends Classic.Node implements DataflowNode {
 }
 
 class AddNode extends Classic.Node implements DataflowNode {
-  width = 180;
-  height = 195;
+  width = 160;
+  height = 70;
 
   constructor() {
     super('Add');
@@ -330,8 +375,8 @@ class AddNode extends Classic.Node implements DataflowNode {
 }
 
 class ConditionNode extends Classic.Node implements DataflowNode {
-  width = 220;
-  height = 160;
+  width = 160;
+  height = 70;
 
   constructor() {
     super('Condition');
@@ -386,8 +431,8 @@ class ConditionNode extends Classic.Node implements DataflowNode {
 }
 
 class LogNode extends Classic.Node implements DataflowNode {
-  width = 220;
-  height = 100;
+  width = 160;
+  height = 70;
 
   constructor(label: string) {
     super('Log');
@@ -428,7 +473,7 @@ export async function createEditor(container: HTMLElement, injector: Injector) {
   function createNodeByType(type: string): Node {
     switch (type) {
       case 'Start':
-        return new StartNode();
+        return new StartNode();              
 
       case 'Number':
         return new NumberNode(0, process);
@@ -445,9 +490,27 @@ export async function createEditor(container: HTMLElement, injector: Injector) {
       case 'Merge':
         return new MergeNode();
 
-      case 'End':
+      case 'End':  
       case 'Failure':
         return new EndNode(type);
+
+      case 'Trigger':
+        return new TriggerNode();
+
+      case 'Send Email':
+        return new SendEmailNode();
+
+      case 'Delay':
+        return new DelayNode();
+
+      case 'Check Email Opened':
+        return new CheckOpenedNode();
+
+      case 'Tag User':
+        return new TagUserNode();
+
+      case 'Send Reminder':
+        return new SendReminderNode();
 
       default:
         throw new Error(`Unknown node type: ${type}`);
@@ -470,6 +533,12 @@ export async function createEditor(container: HTMLElement, injector: Injector) {
       ['Merge', () => new MergeNode()],
       ['End', () => new EndNode('End')],
       ['End (Failure)', () => new EndNode('Failure')],
+      ['Trigger', () => new TriggerNode()],
+      ['Send Email', () => new SendEmailNode()],
+      ['Delay', () => new DelayNode()],
+      ['Check Email Opened', () => new CheckOpenedNode()],
+      ['Tag User', () => new TagUserNode()],
+      ['Send Reminder', () => new SendReminderNode()],
     ]),
   });
 
@@ -559,11 +628,12 @@ export async function createEditor(container: HTMLElement, injector: Injector) {
   }
 
   function persistWorkflow() {
+    console.log(JSON.stringify(saveWorkflow(), null, 2));
     const json = saveWorkflow();
     localStorage.setItem('workflow', JSON.stringify(json));
   }
 
-  console.log(JSON.stringify(saveWorkflow(), null, 2));
+  //console.log(JSON.stringify(saveWorkflow(), null, 2));
 
   // setTimeout(async () => {
   //   const json = saveWorkflow();
