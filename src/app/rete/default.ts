@@ -467,13 +467,39 @@ class LogNode extends Classic.Node implements DataflowNode {
 
 type AreaExtra = Area2D<Schemes> | AngularArea2D<Schemes> | ContextMenuExtra;
 
-const socket = new Classic.Socket('socket');
+function findParallelNodesAndConnections(data: WorkflowJSON) {
+  // group connections by source node
+  const sourceMap = new Map<string, typeof data.connections>();
+
+  for (const conn of data.connections) {
+    if (!sourceMap.has(conn.source)) {
+      sourceMap.set(conn.source, []);
+    }
+    sourceMap.get(conn.source)!.push(conn);
+  }
+
+  const parallelNodes: string[] = [];
+  const parallelConnections: typeof data.connections = [];
+
+  for (const [source, connections] of sourceMap.entries()) {
+    // if more than 1 outgoing connection → parallel
+    if (connections.length > 1) {
+      parallelNodes.push(source);
+      parallelConnections.push(...connections);
+    }
+  }
+
+  return {
+    parallelNodes,
+    parallelConnections,
+  };
+}
 
 export async function createEditor(container: HTMLElement, injector: Injector) {
   function createNodeByType(type: string): Node {
     switch (type) {
       case 'Start':
-        return new StartNode();              
+        return new StartNode();
 
       case 'Number':
         return new NumberNode(0, process);
@@ -490,7 +516,7 @@ export async function createEditor(container: HTMLElement, injector: Injector) {
       case 'Merge':
         return new MergeNode();
 
-      case 'End':  
+      case 'End':
       case 'Failure':
         return new EndNode(type);
 
@@ -745,6 +771,10 @@ export async function createEditor(container: HTMLElement, injector: Injector) {
   if (saved) {
     const json = JSON.parse(saved);
     loadWorkflow(json);
+    const result = findParallelNodesAndConnections(json);
+
+    console.log('Parallel Nodes:', result.parallelNodes);
+    console.log('Parallel Connections:', result.parallelConnections);
   } else {
     process(); // run default graph if no saved workflow
   }
